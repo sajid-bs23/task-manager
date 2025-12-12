@@ -16,21 +16,14 @@ export function useBoardData(boardId) {
     const fetchBoardData = async () => {
         try {
             setLoading(true)
+            const { data, error } = await supabase.functions.invoke('board-details', {
+                body: { boardId }
+            })
 
-            const [boardRes, columnsRes] = await Promise.all([
-                supabase.from('boards').select('*').eq('id', boardId).single(),
-                supabase.from('columns')
-                    .select('*, tasks(*)') // Nested select
-                    .eq('board_id', boardId)
-                    .order('position')
-                    .order('position', { foreignTable: 'tasks' }) // Order the nested tasks
-            ])
+            if (error) throw error
 
-            if (boardRes.error) throw boardRes.error
-            if (columnsRes.error) throw columnsRes.error
-
-            setBoard(boardRes.data)
-            setColumns(columnsRes.data || [])
+            setBoard(data.board)
+            setColumns(data.columns || [])
         } catch (err) {
             setError(err)
             console.error('Error fetching board data:', err)
@@ -42,100 +35,58 @@ export function useBoardData(boardId) {
     const createColumn = async (title) => {
         try {
             const newPosition = columns.length
-            const { data, error } = await supabase
-                .from('columns')
-                .insert([{ board_id: boardId, title, position: newPosition }])
-                .select()
-                .single()
+            const { data, error } = await supabase.functions.invoke('columns', {
+                body: { action: 'create', boardId, title, position: newPosition }
+            })
 
-            if (error) {
-                console.error('Supabase Error creating column:', error)
-                throw error
-            }
+            if (error) throw error
             setColumns([...columns, data])
             return { data, error: null }
         } catch (err) {
             console.error('Exception creating column:', err)
-            alert(`Error creating column: ${err.message || JSON.stringify(err)}`) // Proactive alert for user
             return { data: null, error: err }
         }
     }
 
     const updateColumnOrder = async (newColumns) => {
-        // Optimistic update
-        setColumns(newColumns)
-
+        setColumns(newColumns) // Optimistic
         try {
-            // Prepare updates: id and new position
-            const updates = newColumns.map((col, index) => ({
-                id: col.id,
-                position: index,
-                board_id: boardId, // Required for RLS checks usually, though update only needs ID ideally
-                title: col.title,   // Supabase upsert requires all not-null fields if not partial? 
-                // Actually upsert works with partial if primary key is there.
-                // But let's be safe. Wait, upsert needs all required columns if it's an insert, 
-                // but for update it relies on PK. 
-                // However, supabase-js upsert might assume full row.
-            }))
-
-            // It's cleaner to just upsert. But mass upsert might be tricky if we don't have all fields.
-            // Let's use a loop or upsert with ignoreDuplicates? NO, we want to update.
-            // Easiest way in Supabase is upserting the changed fields.
-
-            const { error } = await supabase
-                .from('columns')
-                .upsert(
-                    newColumns.map((col, index) => ({
-                        id: col.id,
-                        board_id: boardId,
-                        title: col.title,
-                        position: index,
-                        updated_at: new Date().toISOString()
-                    }))
-                )
-
+            const { error } = await supabase.functions.invoke('columns', {
+                body: {
+                    action: 'reorder',
+                    columns: newColumns.map((c, i) => ({ ...c, position: i }))
+                }
+            })
             if (error) throw error
         } catch (err) {
             console.error('Error updating column order:', err)
-            // Revert on error? For now just log.
             fetchBoardData()
         }
     }
 
     const updateColumn = async (columnId, newTitle) => {
+        setColumns(columns.map(col =>
+            col.id === columnId ? { ...col, title: newTitle } : col
+        ))
         try {
-            // Optimistic update
-            setColumns(columns.map(col =>
-                col.id === columnId ? { ...col, title: newTitle } : col
-            ))
-
-            const { error } = await supabase
-                .from('columns')
-                .update({ title: newTitle })
-                .eq('id', columnId)
-                .eq('board_id', boardId) // Extra safety
-
+            const { error } = await supabase.functions.invoke('columns', {
+                body: { action: 'update', id: columnId, title: newTitle }
+            })
             if (error) throw error
             return { error: null }
         } catch (err) {
             console.error('Error updating column:', err)
-            // Revert
             fetchBoardData()
             return { error: err }
         }
     }
 
     const deleteColumn = async (columnId) => {
+        setColumns(columns.filter(col => col.id !== columnId))
         try {
-            // Optimistic update
-            setColumns(columns.filter(col => col.id !== columnId))
-
-            const { error } = await supabase
-                .from('columns')
-                .delete()
-                .eq('id', columnId)
-                .eq('board_id', boardId)
-
+            const { error } = await supabase.functions.invoke('columns', {
+                body: { action: 'delete', id: columnId }
+            })
             if (error) throw error
             return { error: null }
         } catch (err) {
@@ -147,26 +98,15 @@ export function useBoardData(boardId) {
 
     const createTask = async (columnId, title) => {
         try {
-            const { data: userData } = await supabase.auth.getUser()
-            const creatorId = userData.user.id
-
-            // Find current max position
             const columnTasks = columns.find(c => c.id === columnId)?.tasks || []
-            const newPosition = columnTasks.length
+            const newPosition = columnTasks.length // Simplified, backend can handle too but good for now
 
-            const { data, error } = await supabase
-                .from('tasks')
-                .insert([{
-                    column_id: columnId,
-                    title,
-                    creator_id: creatorId,
-                    position: newPosition
-                }])
-                .select()
-                .single()
+            const { data, error } = await supabase.functions.invoke('tasks', {
+                body: { action: 'create', columnId, title, position: newPosition }
+            })
 
             if (error) throw error
-            fetchBoardData()
+            await fetchBoardData() // Reload to get full state
             return { data, error: null }
         } catch (err) {
             console.error('Error creating task:', err)
@@ -186,21 +126,19 @@ export function useBoardData(boardId) {
         setColumns(newColumns)
 
         try {
+            // Flatten updates
+            const tasksToUpdate = []
             for (const colUpdate of affectedColumns) {
-                const { tasks } = colUpdate
-                const updates = tasks.map((task, index) => ({
-                    ...task, // Include all existing fields (title, creator_id, etc.)
-                    column_id: colUpdate.columnId,
-                    position: index,
-                    updated_at: new Date().toISOString()
-                }))
-
-                const { error } = await supabase
-                    .from('tasks')
-                    .upsert(updates)
-
-                if (error) throw error
+                colUpdate.tasks.forEach((task, index) => {
+                    tasksToUpdate.push({ ...task, column_id: colUpdate.columnId, position: index })
+                })
             }
+
+            const { error } = await supabase.functions.invoke('tasks', {
+                body: { action: 'reorder', tasks: tasksToUpdate }
+            })
+
+            if (error) throw error
         } catch (err) {
             console.error('Error updating task order:', err)
             fetchBoardData()
@@ -209,13 +147,12 @@ export function useBoardData(boardId) {
 
     const deleteTask = async (taskId) => {
         try {
-            const { error } = await supabase
-                .from('tasks')
-                .delete()
-                .eq('id', taskId)
+            const { error } = await supabase.functions.invoke('tasks', {
+                body: { action: 'delete', id: taskId }
+            })
 
             if (error) throw error
-            fetchBoardData()
+            await fetchBoardData()
             return { error: null }
         } catch (err) {
             console.error('Error deleting task:', err)
@@ -225,14 +162,9 @@ export function useBoardData(boardId) {
 
     const updateTask = async (taskId, updates) => {
         try {
-            // Optimistic Update
-            // Finding the task is hard in nested structure.
-            // Simplified: Fetch board data
-
-            const { error } = await supabase
-                .from('tasks')
-                .update(updates)
-                .eq('id', taskId)
+            const { error } = await supabase.functions.invoke('tasks', {
+                body: { action: 'update', id: taskId, updates }
+            })
 
             if (error) throw error
             await fetchBoardData()

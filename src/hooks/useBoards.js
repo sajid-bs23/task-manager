@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 export function useBoards() {
   const [boards, setBoards] = useState([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
 
   useEffect(() => {
     fetchBoards()
@@ -11,23 +12,15 @@ export function useBoards() {
 
   const fetchBoards = async () => {
     try {
-      const { data, error } = await supabase
-        .from('boards')
-        .select(`
-          *,
-          board_members (
-            user_id,
-            role,
-            profiles (full_name, avatar_url)
-          )
-        `)
-        .order('created_at', { ascending: false })
-
-      if (error) throw error
-      setBoards(data || [])
-    } catch (error) {
-      console.error('Error fetching boards:', error)
-      alert(`Error fetching boards: ${error.message}`)
+      setLoading(true)
+      const { data, error: err } = await supabase.functions.invoke('boards', {
+        method: 'GET'
+      })
+      if (err) throw err
+      setBoards(data)
+    } catch (err) {
+      setError(err)
+      console.error('Error fetching boards:', err)
     } finally {
       setLoading(false)
     }
@@ -35,35 +28,31 @@ export function useBoards() {
 
   const createBoard = async (title, description) => {
     try {
-      // Use the RPC function which handles board creation + adding owner as member
-      const { data, error } = await supabase.rpc('create_board', {
-        title,
-        description
+      const { data, error: err } = await supabase.functions.invoke('boards', {
+        method: 'POST',
+        body: { title, description }
       })
 
-      if (error) throw error
-
-      // The RPC returns the created board, add it to state
+      if (err) throw err
       setBoards([data, ...boards])
       return { data, error: null }
-    } catch (error) {
-      console.error('Error creating board:', error)
-      return { data: null, error }
+    } catch (err) {
+      console.error('Error creating board:', err)
+      return { error: err }
     }
   }
 
-  const deleteBoard = async (boardId) => {
+  const deleteBoard = async (id) => {
     try {
-      const { error } = await supabase
-        .from('boards')
-        .delete()
-        .eq('id', boardId)
-
-      if (error) throw error
-      setBoards(boards.filter(b => b.id !== boardId))
+      const { error: err } = await supabase.functions.invoke(`boards?id=${id}`, {
+        method: 'DELETE'
+      })
+      if (err) throw err
+      setBoards(boards.filter(b => b.id !== id))
       return { error: null }
-    } catch (error) {
-      return { error }
+    } catch (err) {
+      console.error(err)
+      return { error: err }
     }
   }
 

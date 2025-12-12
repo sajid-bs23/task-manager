@@ -44,31 +44,16 @@ export default function TaskDetailModal({
         setLoading(true)
         try {
             // Fetch Comments
-            const { data: commentsData } = await supabase
-                .from('task_comments')
-                .select('*, profiles(full_name, avatar_url)')
-                .eq('task_id', task.id)
-                .order('created_at', { ascending: true })
-
+            const { data: commentsData } = await supabase.functions.invoke('card-interactions', {
+                body: { action: 'get_comments', taskId: task.id }
+            })
             setComments(commentsData || [])
 
-            // Fetch Relationships (Outgoing)
-            const { data: relData } = await supabase
-                .from('task_relationships')
-                .select('*, tasks!target_task_id(title)')
-                .eq('source_task_id', task.id)
-
-            // Fetch Relationships (Incoming - e.g. blocked by)
-            const { data: incomingRelData } = await supabase
-                .from('task_relationships')
-                .select('*, tasks!source_task_id(title)')
-                .eq('target_task_id', task.id)
-
-            // Normalize
-            const outgoing = (relData || []).map(r => ({ ...r, related_task_title: r.tasks.title, direction: 'outgoing' }))
-            const incoming = (incomingRelData || []).map(r => ({ ...r, related_task_title: r.tasks.title, direction: 'incoming' }))
-
-            setRelationships([...outgoing, ...incoming])
+            // Fetch Relationships
+            const { data: relData } = await supabase.functions.invoke('card-interactions', {
+                body: { action: 'get_relationships', taskId: task.id }
+            })
+            setRelationships(relData || [])
         } catch (err) {
             console.error("Error fetching details", err)
         } finally {
@@ -83,26 +68,21 @@ export default function TaskDetailModal({
 
     const handleAddComment = async () => {
         if (!newComment.trim()) return
-        const { data: { user } } = await supabase.auth.getUser()
 
-        const { data, error } = await supabase
-            .from('task_comments')
-            .insert({
-                task_id: task.id,
-                user_id: user.id,
-                content: newComment
-            })
-            .select('*, profiles(full_name, avatar_url)')
-            .single()
+        const { data, error } = await supabase.functions.invoke('card-interactions', {
+            body: { action: 'add_comment', taskId: task.id, content: newComment }
+        })
 
-        if (!error) {
+        if (!error && data) {
             setComments([...comments, data])
             setNewComment('')
         }
     }
 
     const handleDeleteComment = async (commentId) => {
-        const { error } = await supabase.from('task_comments').delete().eq('id', commentId)
+        const { error } = await supabase.functions.invoke('card-interactions', {
+            body: { action: 'delete_comment', id: commentId }
+        })
         if (!error) {
             setComments(comments.filter(c => c.id !== commentId))
         }
@@ -114,23 +94,16 @@ export default function TaskDetailModal({
             setSearchResults([])
             return
         }
-        const { data } = await supabase
-            .from('tasks')
-            .select('id, title')
-            .ilike('title', `%${query}%`)
-            .neq('id', task.id)
-            .limit(5)
+        const { data } = await supabase.functions.invoke('card-interactions', {
+            body: { action: 'search_tasks', query, excludeId: task.id }
+        })
         setSearchResults(data || [])
     }
 
     const addRelationship = async (targetId, type) => {
-        const { error } = await supabase
-            .from('task_relationships')
-            .insert({
-                source_task_id: task.id,
-                target_task_id: targetId,
-                type
-            })
+        const { error } = await supabase.functions.invoke('card-interactions', {
+            body: { action: 'add_relationship', taskId: task.id, targetId, type }
+        })
 
         if (!error) {
             fetchDetails() // Easy refresh
@@ -140,8 +113,12 @@ export default function TaskDetailModal({
     }
 
     const removeRelationship = async (relId) => {
-        await supabase.from('task_relationships').delete().eq('id', relId)
-        setRelationships(relationships.filter(r => r.id !== relId))
+        const { error } = await supabase.functions.invoke('card-interactions', {
+            body: { action: 'delete_relationship', id: relId }
+        })
+        if (!error) {
+            setRelationships(relationships.filter(r => r.id !== relId))
+        }
     }
 
     return (
