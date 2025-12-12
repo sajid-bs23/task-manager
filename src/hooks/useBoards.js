@@ -27,6 +27,7 @@ export function useBoards() {
       setBoards(data || [])
     } catch (error) {
       console.error('Error fetching boards:', error)
+      alert(`Error fetching boards: ${error.message}`)
     } finally {
       setLoading(false)
     }

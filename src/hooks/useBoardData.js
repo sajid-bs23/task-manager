@@ -19,7 +19,11 @@ export function useBoardData(boardId) {
 
             const [boardRes, columnsRes] = await Promise.all([
                 supabase.from('boards').select('*').eq('id', boardId).single(),
-                supabase.from('columns').select('*').eq('board_id', boardId).order('position')
+                supabase.from('columns')
+                    .select('*, tasks(*)') // Nested select
+                    .eq('board_id', boardId)
+                    .order('position')
+                    .order('position', { foreignTable: 'tasks' }) // Order the nested tasks
             ])
 
             if (boardRes.error) throw boardRes.error
@@ -98,12 +102,138 @@ export function useBoardData(boardId) {
         }
     }
 
+    const updateColumn = async (columnId, newTitle) => {
+        try {
+            // Optimistic update
+            setColumns(columns.map(col =>
+                col.id === columnId ? { ...col, title: newTitle } : col
+            ))
+
+            const { error } = await supabase
+                .from('columns')
+                .update({ title: newTitle })
+                .eq('id', columnId)
+                .eq('board_id', boardId) // Extra safety
+
+            if (error) throw error
+            return { error: null }
+        } catch (err) {
+            console.error('Error updating column:', err)
+            // Revert
+            fetchBoardData()
+            return { error: err }
+        }
+    }
+
+    const deleteColumn = async (columnId) => {
+        try {
+            // Optimistic update
+            setColumns(columns.filter(col => col.id !== columnId))
+
+            const { error } = await supabase
+                .from('columns')
+                .delete()
+                .eq('id', columnId)
+                .eq('board_id', boardId)
+
+            if (error) throw error
+            return { error: null }
+        } catch (err) {
+            console.error('Error deleting column:', err)
+            fetchBoardData()
+            return { error: err }
+        }
+    }
+
+    const createTask = async (columnId, title) => {
+        try {
+            const { data: userData } = await supabase.auth.getUser()
+            const creatorId = userData.user.id
+
+            // Find current max position
+            const columnTasks = columns.find(c => c.id === columnId)?.tasks || []
+            const newPosition = columnTasks.length
+
+            const { data, error } = await supabase
+                .from('tasks')
+                .insert([{
+                    column_id: columnId,
+                    title,
+                    creator_id: creatorId,
+                    position: newPosition
+                }])
+                .select()
+                .single()
+
+            if (error) throw error
+            fetchBoardData()
+            return { data, error: null }
+        } catch (err) {
+            console.error('Error creating task:', err)
+            return { error: err }
+        }
+    }
+
+    const updateTaskOrder = async (affectedColumns) => {
+        // Optimistic
+        const newColumns = columns.map(col => {
+            const affected = affectedColumns.find(c => c.columnId === col.id)
+            if (affected) {
+                return { ...col, tasks: affected.tasks }
+            }
+            return col
+        })
+        setColumns(newColumns)
+
+        try {
+            for (const colUpdate of affectedColumns) {
+                const { tasks } = colUpdate
+                const updates = tasks.map((task, index) => ({
+                    ...task, // Include all existing fields (title, creator_id, etc.)
+                    column_id: colUpdate.columnId,
+                    position: index,
+                    updated_at: new Date().toISOString()
+                }))
+
+                const { error } = await supabase
+                    .from('tasks')
+                    .upsert(updates)
+
+                if (error) throw error
+            }
+        } catch (err) {
+            console.error('Error updating task order:', err)
+            fetchBoardData()
+        }
+    }
+
+    const deleteTask = async (taskId) => {
+        try {
+            const { error } = await supabase
+                .from('tasks')
+                .delete()
+                .eq('id', taskId)
+
+            if (error) throw error
+            fetchBoardData()
+            return { error: null }
+        } catch (err) {
+            console.error('Error deleting task:', err)
+            return { error: err }
+        }
+    }
+
     return {
         board,
         columns,
         loading,
         error,
         createColumn,
-        updateColumnOrder
+        updateColumn,
+        deleteColumn,
+        updateColumnOrder,
+        createTask,
+        updateTaskOrder,
+        deleteTask
     }
 }
