@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
 export function useBoardData(boardId) {
@@ -7,30 +7,93 @@ export function useBoardData(boardId) {
     const [loading, setLoading] = useState(true)
     const [error, setError] = useState(null)
 
+
+    // Refs for realtime filtering without dependency loops
+    const columnsRef = useRef(columns)
+    useEffect(() => {
+        columnsRef.current = columns
+    }, [columns])
+
+    // Initial Fetch
     useEffect(() => {
         if (boardId) {
             fetchBoardData()
         }
     }, [boardId])
 
+    // Realtime Subscription
+    useEffect(() => {
+        if (!boardId) return
+
+        const channel = supabase.channel(`board-${boardId}`)
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'columns', filter: `board_id=eq.${boardId}` },
+                () => {
+                    console.log('Realtime update: columns changed')
+                    fetchBoardData()
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'board_members', filter: `board_id=eq.${boardId}` },
+                () => {
+                    console.log('Realtime update: members changed')
+                    fetchBoardData()
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'tasks' },
+                (payload) => {
+                    console.log('[Realtime] Task event received:', payload)
+                    // Check if the changed task belongs to one of our columns
+                    // payload.new for INSERT/UPDATE, payload.old for DELETE/UPDATE
+                    const affectedColumnId = payload.new?.column_id || payload.old?.column_id
+
+                    // Log for debugging
+                    const isRelevant = columnsRef.current.some(c => c.id === affectedColumnId)
+                    console.log(`[Realtime] Is relevant? ${isRelevant} (Column: ${affectedColumnId})`)
+
+                    if (isRelevant) {
+                        console.log('Realtime update: tasks changed')
+                        fetchBoardData()
+                    }
+                }
+            )
+            .subscribe((status) => {
+                console.log(`[Realtime] Subscription status: ${status}`)
+            })
+
+        return () => {
+            supabase.removeChannel(channel)
+        }
+    }, [boardId])
+
     const [members, setMembers] = useState([])
 
     const fetchBoardData = async () => {
+        console.log(`[useBoardData] Fetching board data for: ${boardId} (Loading: ${loading})`)
         try {
             setLoading(true)
             const { data, error } = await supabase.functions.invoke('board-details', {
                 body: { boardId }
             })
 
-            if (error) throw error
+            if (error) {
+                console.error('[useBoardData] Edge Function error:', error)
+                throw error
+            }
 
+            console.log('[useBoardData] Fetch success. Setting data.')
             setBoard(data.board)
             setColumns(data.columns || [])
             setMembers(data.members || [])
         } catch (err) {
+            console.error('[useBoardData] Catch Error:', err)
             setError(err)
-            console.error('Error fetching board data:', err)
         } finally {
+            console.log('[useBoardData] Fetch complete. Setting loading=false')
             setLoading(false)
         }
     }
