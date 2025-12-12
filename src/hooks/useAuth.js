@@ -30,18 +30,9 @@ export function useAuth() {
         },
       },
     })
-    
-    // Create profile after signup
-    if (data?.user && !error) {
-      await supabase
-        .from('profiles')
-        .insert({
-          id: data.user.id,
-          email: email,
-          full_name: fullName,
-        })
-    }
-    
+
+    // Profile creation is handled by Database Trigger (handle_new_user)
+
     return { data, error }
   }
 

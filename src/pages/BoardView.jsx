@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core'
 import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
@@ -10,7 +10,7 @@ import { Plus, GripVertical, MoreHorizontal, X } from 'lucide-react'
 
 import { verticalListSortingStrategy } from '@dnd-kit/sortable'
 
-function SortableTask({ task }) {
+function SortableTask({ task, onClick }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { type: 'TASK', task }
@@ -37,13 +37,15 @@ function SortableTask({ task }) {
       style={style}
       {...attributes}
       {...listeners}
-      className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 mb-2 cursor-grab active:cursor-grabbing hover:border-purple-300 group"
+      onClick={onClick}
+      className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 mb-2 cursor-pointer active:cursor-grabbing hover:border-purple-300 group hover:shadow-md transition-all"
     >
       <div className="text-sm text-gray-800 font-medium">{task.title}</div>
+      {/* Small indicators could go here (e.g. comment count) */}
     </div>
   )
 }
-function SortableColumn({ column, updateColumn, deleteColumn, createTask }) {
+function SortableColumn({ column, updateColumn, deleteColumn, createTask, onTaskClick }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
     data: { type: 'COLUMN', column }
@@ -178,7 +180,7 @@ function SortableColumn({ column, updateColumn, deleteColumn, createTask }) {
       <div className="flex-1 p-2 overflow-y-auto min-h-20 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
         <SortableContext items={tasks.map(t => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map(task => (
-            <SortableTask key={task.id} task={task} />
+            <SortableTask key={task.id} task={task} onClick={() => onTaskClick(task)} />
           ))}
         </SortableContext>
         {tasks.length === 0 && !isAddingTask && (
@@ -242,10 +244,28 @@ function ColumnOverlay({ column }) {
 
 // --- Main Page ---
 
+import TaskDetailModal from '../components/board/TaskDetailModal'
+
 export default function BoardView() {
   const { boardId } = useParams()
-  const { board, columns, loading, createColumn, updateColumnOrder, updateColumn, deleteColumn, createTask, updateTaskOrder, deleteTask } = useBoardData(boardId)
+  const { board, columns, loading, createColumn, updateColumnOrder, updateColumn, deleteColumn, createTask, updateTaskOrder, deleteTask, updateTask } = useBoardData(boardId)
   const [activeColumn, setActiveColumn] = useState(null)
+
+  // Task Details Modal
+  const [selectedTask, setSelectedTask] = useState(null)
+
+  // Sync selectedTask with active board data to ensure updates (e.g. description) are reflected immediately
+  useEffect(() => {
+    if (selectedTask && columns.length > 0) {
+      for (const col of columns) {
+        const found = col.tasks?.find(t => t.id === selectedTask.id)
+        if (found && found !== selectedTask) {
+          setSelectedTask(found)
+          break
+        }
+      }
+    }
+  }, [columns, selectedTask])
 
   // Create Column State
   const [isAddingColumn, setIsAddingColumn] = useState(false)
@@ -509,6 +529,7 @@ export default function BoardView() {
                   updateColumn={updateColumn}
                   deleteColumn={deleteColumn}
                   createTask={createTask}
+                  onTaskClick={setSelectedTask}
                 />
               ))}
             </SortableContext>
@@ -560,6 +581,12 @@ export default function BoardView() {
           {activeColumn ? <ColumnOverlay column={activeColumn} /> : null}
           {activeTask ? <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 mb-2 rotate-3 cursor-grabbing w-64"><div className="text-sm text-gray-800 font-medium">{activeTask.title}</div></div> : null}
         </DragOverlay>
+        <TaskDetailModal
+          task={selectedTask}
+          isOpen={!!selectedTask}
+          onClose={() => setSelectedTask(null)}
+          updateTask={updateTask}
+        />
       </div>
     </DndContext>
   )

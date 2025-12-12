@@ -223,6 +223,26 @@ export function useBoardData(boardId) {
         }
     }
 
+    const updateTask = async (taskId, updates) => {
+        try {
+            // Optimistic Update
+            // Finding the task is hard in nested structure.
+            // Simplified: Fetch board data
+
+            const { error } = await supabase
+                .from('tasks')
+                .update(updates)
+                .eq('id', taskId)
+
+            if (error) throw error
+            await fetchBoardData()
+            return { error: null }
+        } catch (err) {
+            console.error(err)
+            return { error: err }
+        }
+    }
+
     return {
         board,
         columns,
@@ -234,6 +254,7 @@ export function useBoardData(boardId) {
         updateColumnOrder,
         createTask,
         updateTaskOrder,
-        deleteTask
+        deleteTask,
+        updateTask
     }
 }
