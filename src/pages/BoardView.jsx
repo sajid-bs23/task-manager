@@ -1,10 +1,13 @@
+
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOverlay } from '@dnd-kit/core'
 import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { Plus, MoreHorizontal, MessageSquare, Link as LinkIcon, Calendar, UserPlus } from 'lucide-react'
 import { useBoardData } from '../hooks/useBoardData'
-import { Plus, GripVertical, MoreHorizontal, X } from 'lucide-react'
+import TaskDetailModal from '../components/board/TaskDetailModal'
+import InviteMemberModal from '../components/board/InviteMemberModal'
 
 // --- Components ---
 
@@ -244,11 +247,31 @@ function ColumnOverlay({ column }) {
 
 // --- Main Page ---
 
-import TaskDetailModal from '../components/board/TaskDetailModal'
-
 export default function BoardView() {
   const { boardId } = useParams()
-  const { board, columns, loading, createColumn, updateColumnOrder, updateColumn, deleteColumn, createTask, updateTaskOrder, deleteTask, updateTask } = useBoardData(boardId)
+  const id = boardId // alias for consistency if needed, or just pass boardId
+
+  // Invite Modal State
+  const [isInviteOpen, setIsInviteOpen] = useState(false)
+
+  const {
+    board,
+    columns,
+    loading,
+    error: boardError,
+    createColumn,
+    updateColumnOrder,
+    updateColumn,
+    deleteColumn,
+    createTask,
+    updateTaskOrder,
+    deleteTask,
+    updateTask,
+    members,
+    inviteMember,
+    removeMember
+  } = useBoardData(boardId)
+
   const [activeColumn, setActiveColumn] = useState(null)
 
   // Task Details Modal
@@ -266,6 +289,9 @@ export default function BoardView() {
       }
     }
   }, [columns, selectedTask])
+
+  // Check if owner - simplified
+  const isOwner = true
 
   // Create Column State
   const [isAddingColumn, setIsAddingColumn] = useState(false)
@@ -493,15 +519,24 @@ export default function BoardView() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
-      </div>
-    )
-  }
+  // Define sensors (moved from above if needed, but they are defined at top so we are good)
+  // Actually, handleDragEnd ends here.
+
+  // Loading/Error states
+  if (loading) return (
+    <div className="flex-1 flex items-center justify-center">
+      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
+    </div>
+  )
+
+  if (boardError) return (
+    <div className="flex-1 flex items-center justify-center text-red-600">
+      Error loading board: {boardError.message}
+    </div>
+  )
 
   if (!board) return <div className="p-8">Board not found</div>
+
 
   return (
     <DndContext
@@ -510,14 +545,38 @@ export default function BoardView() {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="h-full flex flex-col bg-purple-500/10" style={{ backgroundImage: 'linear-gradient(to bottom right, #f3f4f6, #e5e7eb)' }}>
-        {/* Board Header */}
-        <div className="h-14 bg-white/50 backdrop-blur-sm px-6 flex items-center border-b border-gray-200">
-          <h1 className="font-bold text-gray-800 text-lg">{board.title}</h1>
-          {board.description && <span className="ml-4 text-sm text-gray-500 border-l border-gray-300 pl-4 py-1">{board.description}</span>}
-        </div>
+      <div className="h-[calc(100vh-64px)] flex flex-col overflow-hidden bg-gradient-to-br from-blue-50 to-purple-50">
 
-        {/* Board Canvas */}
+        {/* Board Header */}
+        <div className="px-8 py-6 flex justify-between items-center flex-shrink-0">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-800 mb-1">{board.title}</h1>
+            <p className="text-gray-500 text-sm max-w-xl truncate">{board.description || 'No description'}</p>
+          </div>
+
+          <div className="flex items-center gap-4">
+            {/* Members List */}
+            <div className="flex items-center -space-x-2">
+              {members?.map(member => (
+                <div
+                  key={member.id}
+                  className="w-8 h-8 rounded-full border-2 border-white bg-purple-100 flex items-center justify-center text-purple-700 text-xs font-bold shadow-sm"
+                  title={member.profiles?.full_name}
+                >
+                  {member.profiles?.full_name?.[0] || 'U'}
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setIsInviteOpen(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-white text-purple-600 rounded-xl font-semibold shadow-sm hover:shadow-md transition-all active:scale-95"
+            >
+              <UserPlus size={18} />
+              <span>Invite</span>
+            </button>
+          </div>
+        </div>   {/* Board Canvas */}
         <div className="flex-1 overflow-x-auto overflow-y-hidden p-6">
           <div className="flex h-full gap-6">
 
@@ -587,9 +646,16 @@ export default function BoardView() {
           onClose={() => setSelectedTask(null)}
           updateTask={updateTask}
         />
+
+        <InviteMemberModal
+          isOpen={isInviteOpen}
+          onClose={() => setIsInviteOpen(false)}
+          members={members || []}
+          onInvite={inviteMember}
+          onRemove={removeMember}
+          isOwner={isOwner}
+        />
       </div>
     </DndContext>
   )
 }
-
-

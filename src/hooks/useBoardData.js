@@ -13,6 +13,8 @@ export function useBoardData(boardId) {
         }
     }, [boardId])
 
+    const [members, setMembers] = useState([])
+
     const fetchBoardData = async () => {
         try {
             setLoading(true)
@@ -24,6 +26,7 @@ export function useBoardData(boardId) {
 
             setBoard(data.board)
             setColumns(data.columns || [])
+            setMembers(data.members || [])
         } catch (err) {
             setError(err)
             console.error('Error fetching board data:', err)
@@ -31,6 +34,36 @@ export function useBoardData(boardId) {
             setLoading(false)
         }
     }
+
+    const inviteMember = async (email) => {
+        try {
+            const { data, error } = await supabase.functions.invoke('board-members', {
+                body: { action: 'invite', boardId, email }
+            })
+
+            if (error || data?.error) throw error || new Error(data?.error)
+
+            await fetchBoardData() // Reload members
+            return { error: null }
+        } catch (err) {
+            return { error: err }
+        }
+    }
+
+    const removeMember = async (userId) => {
+        try {
+            const { error } = await supabase.functions.invoke('board-members', {
+                body: { action: 'remove', boardId, userId }
+            })
+
+            if (error) throw error
+            await fetchBoardData()
+            return { error: null }
+        } catch (err) {
+            return { error: err }
+        }
+    }
+
 
     const createColumn = async (title) => {
         try {
@@ -187,6 +220,9 @@ export function useBoardData(boardId) {
         createTask,
         updateTaskOrder,
         deleteTask,
-        updateTask
+        updateTask,
+        members,
+        inviteMember,
+        removeMember
     }
 }

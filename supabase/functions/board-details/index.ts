@@ -30,6 +30,14 @@ Deno.serve(async (req) => {
 
         if (boardError) throw boardError
 
+        // Fetch Members
+        const { data: members, error: memError } = await supabaseClient
+            .from('board_members')
+            .select('*, profiles(full_name, avatar_url, email)')
+            .eq('board_id', boardId)
+
+        if (memError) throw memError
+
         // Fetch Columns and Nested Tasks
         // Note: Supabase can do deep nesting
         const { data: columns, error: colError } = await supabaseClient
@@ -56,7 +64,7 @@ Deno.serve(async (req) => {
             tasks: (col.tasks || []).sort((a, b) => a.position - b.position)
         }))
 
-        return new Response(JSON.stringify({ board, columns: sortedColumns }), {
+        return new Response(JSON.stringify({ board, columns: sortedColumns, members }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         })
 
