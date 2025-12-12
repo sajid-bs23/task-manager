@@ -163,7 +163,9 @@ export function useBoardData(boardId) {
             const tasksToUpdate = []
             for (const colUpdate of affectedColumns) {
                 colUpdate.tasks.forEach((task, index) => {
-                    tasksToUpdate.push({ ...task, column_id: colUpdate.columnId, position: index })
+                    // Sanitize task object: remove profiles (joined data) and potentially other non-db fields
+                    const { profiles, ...cleanTask } = task
+                    tasksToUpdate.push({ ...cleanTask, column_id: colUpdate.columnId, position: index })
                 })
             }
 

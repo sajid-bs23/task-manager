@@ -72,7 +72,8 @@ Deno.serve(async (req) => {
         throw new Error('Invalid action')
 
     } catch (error) {
-        return new Response(JSON.stringify({ error: error.message }), {
+        console.error('Task function error:', error)
+        return new Response(JSON.stringify({ error: error.message, details: error }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
             status: 400,
         })
