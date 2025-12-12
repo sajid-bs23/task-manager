@@ -13,9 +13,9 @@ export default function Sidebar() {
           <span className="font-bold text-xl text-gray-800 tracking-tight">TrelloClone</span>
         </div>
 
-        <button className="w-full bg-blue-50 hover:bg-blue-100 text-blue-600 py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-semibold transition-colors mb-6">
+        <Link to="/" className="w-full bg-blue-50 hover:bg-blue-100 text-blue-600 py-3 px-4 rounded-xl flex items-center justify-center gap-2 font-semibold transition-colors mb-6">
           <span className="text-xl">+</span> Create Board
-        </button>
+        </Link>
 
         <nav className="space-y-1">
           <Link to="/" className="flex items-center gap-3 p-3 rounded-xl bg-gradient-to-r from-purple-50 to-white text-purple-700 font-medium border-l-4 border-purple-600 shadow-sm">
