@@ -14,6 +14,7 @@ export default function ChatWidget({ boardId, members }) {
         conversations,
         activeConversation,
         messages,
+        unreadCount,
         setActiveConversation,
         fetchConversations,
         fetchMessages,
@@ -203,9 +204,14 @@ export default function ChatWidget({ boardId, members }) {
             {/* Toggle Button */}
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="pointer-events-auto bg-purple-600 hover:bg-purple-700 text-white p-4 rounded-full shadow-lg transition-all hover:scale-105 active:scale-95"
+                className="pointer-events-auto bg-purple-600 hover:bg-purple-700 text-white p-4 rounded-full shadow-lg transition-all hover:scale-105 active:scale-95 relative"
             >
                 <MessageCircle size={24} />
+                {unreadCount > 0 && !isOpen && (
+                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-white">
+                        {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                )}
             </button>
         </div>
     )
