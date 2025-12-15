@@ -8,6 +8,7 @@ import { Plus, MoreHorizontal, MessageSquare, Link as LinkIcon, Calendar, UserPl
 import { useBoardData } from '../hooks/useBoardData'
 import TaskDetailModal from '../components/board/TaskDetailModal'
 import InviteMemberModal from '../components/board/InviteMemberModal'
+import ChatWidget from '../components/chat/ChatWidget'
 
 // --- Components ---
 
@@ -655,6 +656,8 @@ export default function BoardView() {
           onRemove={removeMember}
           isOwner={isOwner}
         />
+
+        <ChatWidget boardId={board.id} members={members} />
       </div>
     </DndContext>
   )
