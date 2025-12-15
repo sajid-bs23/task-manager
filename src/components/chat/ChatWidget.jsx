@@ -20,7 +20,7 @@ export default function ChatWidget({ boardId, members }) {
         fetchMessages,
         sendMessage,
         startChat
-    } = useChat(boardId, user)
+    } = useChat(boardId, user, isOpen)
 
     const [msgInput, setMsgInput] = useState('')
     const bottomRef = useRef(null)

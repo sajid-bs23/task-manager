@@ -1,7 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '../lib/supabase'
 
-export function useChat(boardId, currentUser) {
+// Global set to track processed message IDs across all hook instances
+const globalProcessedIds = new Set()
+
+export function useChat(boardId, currentUser, isWidgetOpen = false) {
     const [conversations, setConversations] = useState([])
     const [activeConversation, setActiveConversation] = useState(null)
     const [messages, setMessages] = useState([])
@@ -12,6 +15,16 @@ export function useChat(boardId, currentUser) {
     // And also we need a list of potential users to chat with (Board Members).
 
     const [unreadCount, setUnreadCount] = useState(0)
+
+    // Ref to track open state inside event listeners
+    const isOpenRef = useRef(isWidgetOpen)
+    useEffect(() => {
+        isOpenRef.current = isWidgetOpen
+        // Also if opening and we have active conv, mark read
+        if (isWidgetOpen && activeConversation) {
+            markAsRead(activeConversation.id)
+        }
+    }, [isWidgetOpen, activeConversation])
 
     // Initial Load
     useEffect(() => {
@@ -32,6 +45,19 @@ export function useChat(boardId, currentUser) {
                 (payload) => {
                     const newMessage = payload.new
 
+                    // Global Deduplication check
+                    if (globalProcessedIds.has(newMessage.id)) {
+                        console.log('Skipping duplicate message:', newMessage.id)
+                        return
+                    }
+                    globalProcessedIds.add(newMessage.id)
+                    console.log('Processing new message globally:', newMessage.id)
+
+                    // Cleanup old IDs periodically
+                    if (globalProcessedIds.size > 500) {
+                        globalProcessedIds.clear()
+                    }
+
                     // Ignore my own messages
                     if (currentUser && newMessage.sender_id === currentUser.id) return
 
@@ -47,8 +73,13 @@ export function useChat(boardId, currentUser) {
 
                         if (isMyConversation) {
                             setActiveConversation(currentActive => {
-                                // If I'm not in this chat, increment unread
-                                if (currentActive?.id !== newMessage.conversation_id) {
+                                // Logic: Increment if:
+                                // 1. Widget is CLOSED (regardless of active conv)
+                                // 2. Widget is OPEN but user is looking at DIFFERENT conv
+                                const isClosed = !isOpenRef.current
+                                const distinctConv = currentActive?.id !== newMessage.conversation_id
+
+                                if (isClosed || distinctConv) {
                                     setUnreadCount(prev => prev + 1)
                                 }
                                 return currentActive
@@ -60,7 +91,10 @@ export function useChat(boardId, currentUser) {
             )
             .subscribe()
 
+        console.log('UseChat: Subscribed to global notifications')
+
         return () => {
+            console.log('UseChat: Cleaning up global subscription')
             supabase.removeChannel(channel)
         }
     }, [])
