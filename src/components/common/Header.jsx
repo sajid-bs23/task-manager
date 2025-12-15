@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '../../hooks/useAuth'
 import ProfileMenu from './ProfileMenu'
 import SettingsModal from './SettingsModal'
+import Notifications from './Notifications'
 import { supabase } from '../../lib/supabase'
 
 export default function Header() {
@@ -35,6 +36,8 @@ export default function Header() {
             </p>
             <p className="text-xs text-gray-500">{user?.email}</p>
           </div>
+
+          <Notifications />
 
           <ProfileMenu
             user={{ ...user, user_metadata: { ...user?.user_metadata, full_name: profileName } }}
