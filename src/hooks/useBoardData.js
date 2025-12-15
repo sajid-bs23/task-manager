@@ -46,18 +46,82 @@ export function useBoardData(boardId) {
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'tasks' },
                 (payload) => {
-                    console.log('[Realtime] Task event received:', payload)
-                    // Check if the changed task belongs to one of our columns
-                    // payload.new for INSERT/UPDATE, payload.old for DELETE/UPDATE
-                    const affectedColumnId = payload.new?.column_id || payload.old?.column_id
+                    const { eventType, new: newRec, old: oldRec } = payload
+                    console.log(`[Realtime] Task ${eventType} received`, payload)
 
-                    // Log for debugging
-                    const isRelevant = columnsRef.current.some(c => c.id === affectedColumnId)
-                    console.log(`[Realtime] Is relevant? ${isRelevant} (Column: ${affectedColumnId})`)
+                    if (eventType === 'INSERT') {
+                        const isRelevant = columnsRef.current.some(c => c.id === newRec.column_id)
+                        if (isRelevant) {
+                            console.log('New task in board columns, fetching data...')
+                            fetchBoardData()
+                        }
+                    }
+                    else if (eventType === 'DELETE') {
+                        const taskId = oldRec.id
+                        setColumns(prev => {
+                            const taskExists = prev.some(c => c.tasks.some(t => t.id === taskId))
+                            if (!taskExists) return prev
 
-                    if (isRelevant) {
-                        console.log('Realtime update: tasks changed')
-                        fetchBoardData()
+                            console.log('Removing task locally:', taskId)
+                            return prev.map(col => ({
+                                ...col,
+                                tasks: col.tasks.filter(t => t.id !== taskId)
+                            }))
+                        })
+                    }
+                    else if (eventType === 'UPDATE') {
+                        setColumns(prev => {
+                            const taskId = newRec.id
+                            let currentTask = null
+                            let currentColId = null
+
+                            // Find task
+                            for (const col of prev) {
+                                const t = col.tasks.find(item => item.id === taskId)
+                                if (t) {
+                                    currentTask = t
+                                    currentColId = col.id
+                                    break
+                                }
+                            }
+
+                            if (!currentTask) {
+                                const isRelevant = prev.some(c => c.id === newRec.column_id)
+                                if (isRelevant) {
+                                    console.log('Updated task moved into board, fetching...')
+                                    fetchBoardData()
+                                }
+                                return prev
+                            }
+
+                            console.log('Updating task locally:', taskId)
+                            const nextColId = newRec.column_id
+                            const mergedTask = { ...currentTask, ...newRec }
+
+                            if (currentColId === nextColId) {
+                                return prev.map(col => {
+                                    if (col.id === currentColId) {
+                                        const tasks = col.tasks.map(t => t.id === taskId ? mergedTask : t)
+                                        tasks.sort((a, b) => a.position - b.position)
+                                        return { ...col, tasks }
+                                    }
+                                    return col
+                                })
+                            } else {
+                                // Moved to another column
+                                return prev.map(col => {
+                                    if (col.id === currentColId) {
+                                        return { ...col, tasks: col.tasks.filter(t => t.id !== taskId) }
+                                    }
+                                    if (col.id === nextColId) {
+                                        const tasks = [...col.tasks, mergedTask]
+                                        tasks.sort((a, b) => a.position - b.position)
+                                        return { ...col, tasks }
+                                    }
+                                    return col
+                                })
+                            }
+                        })
                     }
                 }
             )
