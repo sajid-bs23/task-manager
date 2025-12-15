@@ -29,9 +29,23 @@ export function useBoardData(boardId) {
             .on(
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'columns', filter: `board_id=eq.${boardId}` },
-                () => {
-                    console.log('Realtime update: columns changed')
-                    fetchBoardData()
+                (payload) => {
+                    const { eventType, new: newRec, old: oldRec } = payload
+                    console.log(`[Realtime] Column ${eventType}`, payload)
+
+                    if (eventType === 'INSERT') {
+                        setColumns(prev => {
+                            if (prev.some(c => c.id === newRec.id)) return prev
+                            const newCol = { ...newRec, tasks: [] }
+                            return [...prev, newCol].sort((a, b) => a.position - b.position)
+                        })
+                    } else if (eventType === 'UPDATE') {
+                        setColumns(prev => prev.map(c =>
+                            c.id === newRec.id ? { ...c, ...newRec } : c
+                        ).sort((a, b) => a.position - b.position))
+                    } else if (eventType === 'DELETE') {
+                        setColumns(prev => prev.filter(c => c.id !== oldRec.id))
+                    }
                 }
             )
             .on(
@@ -266,7 +280,8 @@ export function useBoardData(boardId) {
             })
 
             if (error) throw error
-            await fetchBoardData() // Reload to get full state
+            if (error) throw error
+            // await fetchBoardData() // Removed: Realtime listener will handle INSERT locally
             return { data, error: null }
         } catch (err) {
             console.error('Error creating task:', err)
@@ -324,12 +339,24 @@ export function useBoardData(boardId) {
 
     const updateTask = async (taskId, updates) => {
         try {
+            // Optimistic Update
+            setColumns(prev => prev.map(col => {
+                const task = col.tasks.find(t => t.id === taskId)
+                if (task) {
+                    return {
+                        ...col,
+                        tasks: col.tasks.map(t => t.id === taskId ? { ...t, ...updates } : t)
+                    }
+                }
+                return col
+            }))
+
             const { error } = await supabase.functions.invoke('tasks', {
                 body: { action: 'update', id: taskId, updates }
             })
 
             if (error) throw error
-            await fetchBoardData()
+            // await fetchBoardData() // Removed to prevent full refresh
             return { error: null }
         } catch (err) {
             console.error(err)

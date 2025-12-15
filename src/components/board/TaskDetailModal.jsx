@@ -37,23 +37,66 @@ export default function TaskDetailModal({
         if (isOpen && task) {
             setDescription(task.description || '')
             fetchDetails()
+
+            // Realtime subscription for comments
+            const channel = supabase.channel(`task-detail-${task.id}`)
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'task_comments', filter: `task_id=eq.${task.id}` },
+                    (payload) => {
+                        // If it's an INSERT and we don't have it (or just re-fetch to be safe and get profile)
+                        // Note: Our optimistic update might already have added it.
+                        // We can just re-fetch comments.
+                        if (payload.eventType === 'INSERT') {
+                            // Delay slightly to ensure DB write propagated if needed (though event usually means committed)
+                            // We need to fetch to get the Profile data joined.
+                            fetchCommentsOnly()
+                        } else if (payload.eventType === 'DELETE') {
+                            setComments(prev => prev.filter(c => c.id !== payload.old.id))
+                        }
+                    }
+                )
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'card_relationships', filter: `task_id=eq.${task.id}` },
+                    () => { fetchRelationshipsOnly() }
+                )
+                .subscribe()
+
+            return () => {
+                supabase.removeChannel(channel)
+            }
         }
     }, [isOpen, task])
+
+    const fetchCommentsOnly = async () => {
+        const { data: commentsData } = await supabase.functions.invoke('card-interactions', {
+            body: { action: 'get_comments', taskId: task.id }
+        })
+        if (commentsData) {
+            setComments(current => {
+                // Simple merge to avoid overwriting optimistic updates if they match? 
+                // Actually, replacing proper is better to get real IDs and Profiles.
+                // But we want to avoid UI jumps. 
+                // If we optimistically added a comment, it has an ID/Profile? 
+                // The optimistic add in handleAddComment receives the 'data' from server, so it has ID/Profile.
+                // So straightforward replacement is fine.
+                return commentsData
+            })
+        }
+    }
+
+    const fetchRelationshipsOnly = async () => {
+        const { data: relData } = await supabase.functions.invoke('card-interactions', {
+            body: { action: 'get_relationships', taskId: task.id }
+        })
+        setRelationships(relData || [])
+    }
 
     const fetchDetails = async () => {
         setLoading(true)
         try {
-            // Fetch Comments
-            const { data: commentsData } = await supabase.functions.invoke('card-interactions', {
-                body: { action: 'get_comments', taskId: task.id }
-            })
-            setComments(commentsData || [])
-
-            // Fetch Relationships
-            const { data: relData } = await supabase.functions.invoke('card-interactions', {
-                body: { action: 'get_relationships', taskId: task.id }
-            })
-            setRelationships(relData || [])
+            await Promise.all([fetchCommentsOnly(), fetchRelationshipsOnly()])
         } catch (err) {
             console.error("Error fetching details", err)
         } finally {
