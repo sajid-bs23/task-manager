@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import ReactQuill from 'react-quill-new'
 import 'react-quill-new/dist/quill.snow.css'
 import { formatDistanceToNow } from 'date-fns'
@@ -43,6 +43,11 @@ export default function TaskDetailModal({
 
     // Attachments
     const [attachments, setAttachments] = useState([])
+    const attachmentsRef = useRef(attachments)
+    useEffect(() => {
+        attachmentsRef.current = attachments
+    }, [attachments])
+
     const [uploadError, setUploadError] = useState(null)
     const [isUploading, setIsUploading] = useState(false)
 
@@ -72,10 +77,34 @@ export default function TaskDetailModal({
                 )
                 .on(
                     'postgres_changes',
-                    { event: '*', schema: 'public', table: 'card_relationships', filter: `task_id=eq.${task.id}` },
-                    () => { fetchRelationshipsOnly() }
+                    { event: '*', schema: 'public', table: 'task_relationships', filter: `source_task_id=eq.${task.id}` },
+                    (payload) => { console.log('Rel Change (Source)', payload); fetchRelationshipsOnly() }
                 )
-                .subscribe()
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'task_relationships', filter: `target_task_id=eq.${task.id}` },
+                    (payload) => { console.log('Rel Change (Target)', payload); fetchRelationshipsOnly() }
+                )
+                .on(
+                    'postgres_changes',
+                    { event: '*', schema: 'public', table: 'task_attachments' },
+                    (payload) => {
+                        console.log('Attachment Change (Raw)', payload)
+                        // Hande INSERT/UPDATE: Check new/old task_id
+                        const relatedTaskId = payload.new?.task_id || payload.old?.task_id
+
+                        // Handle DELETE without Replica Identity (fallback): Check if ID is in current list
+                        const isRelevantDelete = payload.eventType === 'DELETE' && attachmentsRef.current.some(a => a.id === payload.old.id)
+
+                        if ((relatedTaskId && relatedTaskId === task.id) || isRelevantDelete) {
+                            console.log("Triggering fetchAttachmentsOnly")
+                            fetchAttachmentsOnly()
+                        }
+                    }
+                )
+                .subscribe((status) => {
+                    console.log(`TaskDetail Subscription Status: ${status}`)
+                })
 
             return () => {
                 supabase.removeChannel(channel)
@@ -247,12 +276,18 @@ export default function TaskDetailModal({
 
     const handleDeleteAttachment = async (attachment) => {
         try {
-            // Delete from Storage
+            console.log('Deleting attachment:', attachment.file_path)
+
+            // Delete from Storage first
             const { error: storageErr } = await supabase.storage
                 .from('attachments')
                 .remove([attachment.file_path])
 
-            if (storageErr) throw storageErr
+            if (storageErr) {
+                console.error('Storage delete error:', storageErr)
+                throw storageErr
+            }
+            console.log('Storage delete successful')
 
             // Delete from DB
             const { error: dbErr } = await supabase
@@ -260,24 +295,33 @@ export default function TaskDetailModal({
                 .delete()
                 .eq('id', attachment.id)
 
-            if (dbErr) throw dbErr
+            if (dbErr) {
+                console.error('Database delete error:', dbErr)
+                throw dbErr
+            }
+            console.log('Database delete successful')
 
             setAttachments(attachments.filter(a => a.id !== attachment.id))
         } catch (error) {
             console.error("Delete failed:", error)
-            alert("Failed to delete attachment")
+            alert(`Failed to delete attachment: ${error.message}`)
         }
     }
 
     const downloadAttachment = async (path, originalName) => {
         try {
+            // Get signed URL for private bucket
             const { data, error } = await supabase.storage
                 .from('attachments')
-                .download(path)
+                .createSignedUrl(path, 60) // 60 seconds expiry
 
             if (error) throw error
 
-            const url = URL.createObjectURL(data)
+            // Download using signed URL
+            const response = await fetch(data.signedUrl)
+            const blob = await response.blob()
+
+            const url = URL.createObjectURL(blob)
             const a = document.createElement('a')
             a.href = url
             a.download = originalName
