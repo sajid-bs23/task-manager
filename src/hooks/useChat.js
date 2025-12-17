@@ -16,15 +16,26 @@ export function useChat(boardId, currentUser, isWidgetOpen = false) {
 
     const [unreadCount, setUnreadCount] = useState(0)
 
-    // Ref to track open state inside event listeners
+    // Refs to access latest state inside listeners without dependencies
     const isOpenRef = useRef(isWidgetOpen)
+    const activeConversationRef = useRef(activeConversation)
+    const conversationsRef = useRef(conversations)
+
+    // Sync refs
     useEffect(() => {
         isOpenRef.current = isWidgetOpen
-        // Also if opening and we have active conv, mark read
         if (isWidgetOpen && activeConversation) {
             markAsRead(activeConversation.id)
         }
     }, [isWidgetOpen, activeConversation])
+
+    useEffect(() => {
+        activeConversationRef.current = activeConversation
+    }, [activeConversation])
+
+    useEffect(() => {
+        conversationsRef.current = conversations
+    }, [conversations])
 
     // Initial Load
     useEffect(() => {
@@ -37,7 +48,6 @@ export function useChat(boardId, currentUser, isWidgetOpen = false) {
     // Global Message Subscription for Notifications
     useEffect(() => {
         // Subscribe to ALL messages in public schema
-        // We filter client-side because dynamic server-side filters are limited
         const channel = supabase.channel('global-chat-notifications')
             .on(
                 'postgres_changes',
@@ -61,32 +71,23 @@ export function useChat(boardId, currentUser, isWidgetOpen = false) {
                     // Ignore my own messages
                     if (currentUser && newMessage.sender_id === currentUser.id) return
 
-                    // Check if this message belongs to one of my conversations
-                    // We need the latest 'conversations' state, so use functional update or ref if needed.
-                    // To be safe, let's rely on the fact that 'conversations' is updated.
-                    // Actually, a simpler check: If I am not currently viewing this conversation, increment.
-                    // But we only want to increment for conversations I AM in.
-                    // We can check if 'conversations' list contains this ID.
+                    // Check if message belongs to one of my conversations (using Ref)
+                    const myConvs = conversationsRef.current
+                    const isMyConversation = myConvs.some(c => c.id === newMessage.conversation_id)
 
-                    setConversations(currentConvs => {
-                        const isMyConversation = currentConvs.some(c => c.id === newMessage.conversation_id)
+                    if (isMyConversation) {
+                        // Check if we should increment unread count
+                        // 1. Widget is CLOSED
+                        // 2. Widget is OPEN but viewing DIFFERENT conversation
+                        const isClosed = !isOpenRef.current
+                        const currentActive = activeConversationRef.current
+                        const distinctConv = currentActive?.id !== newMessage.conversation_id
 
-                        if (isMyConversation) {
-                            setActiveConversation(currentActive => {
-                                // Logic: Increment if:
-                                // 1. Widget is CLOSED (regardless of active conv)
-                                // 2. Widget is OPEN but user is looking at DIFFERENT conv
-                                const isClosed = !isOpenRef.current
-                                const distinctConv = currentActive?.id !== newMessage.conversation_id
-
-                                if (isClosed || distinctConv) {
-                                    setUnreadCount(prev => prev + 1)
-                                }
-                                return currentActive
-                            })
+                        if (isClosed || distinctConv) {
+                            console.log('Incrementing unread count')
+                            setUnreadCount(prev => prev + 1)
                         }
-                        return currentConvs
-                    })
+                    }
                 }
             )
             .subscribe()
