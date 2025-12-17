@@ -646,6 +646,7 @@ export default function BoardView() {
           isOpen={!!selectedTask}
           onClose={() => setSelectedTask(null)}
           updateTask={updateTask}
+          members={members || []}
         />
 
         <InviteMemberModal

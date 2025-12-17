@@ -10,10 +10,7 @@ export default function TaskDetailModal({
     isOpen,
     onClose,
     updateTask,
-    // Pass these from parent hook or implement locally if prefer self-contained
-    // For simplicity, let's allow this component to fetch its own relationships/comments
-    // or pass methods. Let's start with passing methods for cleaner architecture if possible, 
-    // but self-fetching is easier for detailing.
+    members = []
 }) {
     if (!isOpen || !task) return null
 
@@ -272,7 +269,26 @@ export default function TaskDetailModal({
                         <h4 className="text-xs font-bold text-gray-500 uppercase tracking-wider mb-3">Details</h4>
                         <div className="space-y-2 text-sm text-gray-600">
                             <div className="flex justify-between"><span>Created</span> <span>{new Date(task.created_at).toLocaleDateString()}</span></div>
-                            <div className="flex justify-between"><span>Assignee</span> <span>Unassigned</span></div>
+                            <div className="flex justify-between items-center">
+                                <span>Assignee</span>
+                                <select
+                                    className="bg-transparent border-none outline-none text-right cursor-pointer hover:text-purple-600 transition-colors bg-white/50 rounded px-1 -mr-1"
+                                    value={task.assignee_id || ""}
+                                    onChange={(e) => {
+                                        const newVal = e.target.value;
+                                        // Find the member object to optimistically update (optional but good for UI)
+                                        // updateTask handles the backend and local state merge in hook
+                                        updateTask(task.id, { assignee_id: newVal || null })
+                                    }}
+                                >
+                                    <option value="">Unassigned</option>
+                                    {members && members.map(m => (
+                                        <option key={m.id} value={m.user_id}>
+                                            {m.profiles?.full_name || m.profiles?.email || 'Unknown User'}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
                         </div>
                     </div>
 

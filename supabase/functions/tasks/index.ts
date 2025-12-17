@@ -38,12 +38,32 @@ Deno.serve(async (req) => {
 
         if (action === 'update') {
             const { id, updates } = payload
-            const { error } = await supabaseClient
+
+            // Perform update
+            const { data: updatedTask, error } = await supabaseClient
                 .from('tasks')
                 .update(updates)
                 .eq('id', id)
+                .select()
+                .single()
+
             if (error) throw error
-            return new Response(JSON.stringify({ success: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+
+            // Handle Assignment Notification
+            if (updates.assignee_id && updates.assignee_id !== user?.id) {
+                const { error: notifError } = await supabaseClient
+                    .from('notifications')
+                    .insert({
+                        user_id: updates.assignee_id,
+                        task_id: id,
+                        type: 'assignment',
+                        message: `You have been assigned to task: ${updatedTask.title}`
+                    })
+
+                if (notifError) console.error('Notification error:', notifError)
+            }
+
+            return new Response(JSON.stringify({ success: true, data: updatedTask }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
         }
 
         // Batch Reorder
