@@ -49,7 +49,7 @@ function SortableTask({ task, onClick }) {
     </div>
   )
 }
-function SortableColumn({ column, updateColumn, deleteColumn, createTask, onTaskClick }) {
+function SortableColumn({ column, updateColumn, deleteColumn, createTask, onTaskClick, updateTask }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: column.id,
     data: { type: 'COLUMN', column }
@@ -590,6 +590,7 @@ export default function BoardView() {
                   deleteColumn={deleteColumn}
                   createTask={createTask}
                   onTaskClick={setSelectedTask}
+                  updateTask={updateTask}
                 />
               ))}
             </SortableContext>
@@ -647,6 +648,7 @@ export default function BoardView() {
           onClose={() => setSelectedTask(null)}
           updateTask={updateTask}
           members={members || []}
+          columns={columns || []}
         />
 
         <InviteMemberModal

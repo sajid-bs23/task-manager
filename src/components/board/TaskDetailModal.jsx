@@ -10,13 +10,26 @@ export default function TaskDetailModal({
     isOpen,
     onClose,
     updateTask,
-    members = []
+    members = [],
+    columns = []
 }) {
     if (!isOpen || !task) return null
 
     // Local state for description editing
     const [description, setDescription] = useState(task.description || '')
     const [isEditingDesc, setIsEditingDesc] = useState(false)
+
+    // Local state for Title Editing
+    const [isEditingTitle, setIsEditingTitle] = useState(false)
+    const [editTitle, setEditTitle] = useState(task.title || '')
+
+    // Sync title/desc when task changes
+    useEffect(() => {
+        if (!isEditingTitle) setEditTitle(task.title || '')
+        if (!isEditingDesc) setDescription(task.description || '')
+    }, [task])
+
+    const columnName = columns.find(c => c.id === task.column_id)?.title || 'Unknown Column'
 
     // Comments
     const [comments, setComments] = useState([])
@@ -32,7 +45,6 @@ export default function TaskDetailModal({
 
     useEffect(() => {
         if (isOpen && task) {
-            setDescription(task.description || '')
             fetchDetails()
 
             // Realtime subscription for comments
@@ -130,10 +142,7 @@ export default function TaskDetailModal({
 
     const searchTasks = async (query) => {
         setTargetTaskSearch(query)
-        if (query.length < 2) {
-            setSearchResults([])
-            return
-        }
+        // Ensure even empty query fetches results (latest tasks)
         const { data } = await supabase.functions.invoke('card-interactions', {
             body: { action: 'search_tasks', query, excludeId: task.id }
         })
@@ -171,8 +180,50 @@ export default function TaskDetailModal({
                     {/* Header */}
                     <div className="flex justify-between items-start mb-6">
                         <div>
-                            <h2 className="text-2xl font-bold text-gray-800 mb-2">{task.title}</h2>
-                            <div className="text-sm text-gray-500">In column <span className="font-semibold text-gray-700">Current</span></div>
+                            {isEditingTitle ? (
+                                <form
+                                    onSubmit={async (e) => {
+                                        e.preventDefault()
+                                        if (editTitle.trim() && editTitle !== task.title) {
+                                            await updateTask(task.id, { title: editTitle })
+                                        } else {
+                                            setEditTitle(task.title)
+                                        }
+                                        setIsEditingTitle(false)
+                                    }}
+                                    className="mb-2"
+                                >
+                                    <input
+                                        autoFocus
+                                        className="text-2xl font-bold text-gray-800 border-b-2 border-purple-500 outline-none w-full bg-transparent"
+                                        value={editTitle}
+                                        onChange={e => setEditTitle(e.target.value)}
+                                        onBlur={async () => {
+                                            if (editTitle.trim() && editTitle !== task.title) {
+                                                await updateTask(task.id, { title: editTitle })
+                                            } else {
+                                                setEditTitle(task.title)
+                                            }
+                                            setIsEditingTitle(false)
+                                        }}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Escape') {
+                                                setEditTitle(task.title)
+                                                setIsEditingTitle(false)
+                                            }
+                                        }}
+                                    />
+                                </form>
+                            ) : (
+                                <h2
+                                    className="text-2xl font-bold text-gray-800 mb-2 hover:bg-gray-50 cursor-text rounded px-1 -ml-1 transition-colors border border-transparent hover:border-gray-200"
+                                    onDoubleClick={() => setIsEditingTitle(true)}
+                                    title="Double-click to edit title"
+                                >
+                                    {task.title}
+                                </h2>
+                            )}
+                            <div className="text-sm text-gray-500">In column <span className="font-semibold text-gray-700">{columnName}</span></div>
                         </div>
                         <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
                             <X size={24} className="text-gray-500" />
@@ -335,7 +386,13 @@ export default function TaskDetailModal({
                                 <button onClick={() => setIsAddingRel(false)} className="w-full text-xs text-center text-gray-400 hover:text-gray-600">Cancel</button>
                             </div>
                         ) : (
-                            <button onClick={() => setIsAddingRel(true)} className="w-full py-2 bg-gray-200 hover:bg-gray-300 rounded text-sm font-medium text-gray-700 transition-colors">
+                            <button
+                                onClick={() => {
+                                    setIsAddingRel(true)
+                                    searchTasks('')
+                                }}
+                                className="w-full py-2 bg-gray-200 hover:bg-gray-300 rounded text-sm font-medium text-gray-700 transition-colors"
+                            >
                                 + Add Link
                             </button>
                         )}

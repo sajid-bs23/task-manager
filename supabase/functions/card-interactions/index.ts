@@ -109,6 +109,7 @@ Deno.serve(async (req) => {
                 .select('id, title')
                 .ilike('title', `%${query}%`)
                 .neq('id', excludeId)
+                .order('created_at', { ascending: false })
                 .limit(5)
             if (error) throw error
             return new Response(JSON.stringify(data), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
