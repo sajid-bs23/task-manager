@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import ReactQuill from 'react-quill-new'
 import 'react-quill-new/dist/quill.snow.css'
 import { formatDistanceToNow } from 'date-fns'
-import { X, Send, Link as LinkIcon, Trash2, MessageSquare } from 'lucide-react'
+import { X, Send, Link as LinkIcon, Trash2, MessageSquare, Paperclip, FileText, Download, AlertCircle } from 'lucide-react'
 import { supabase } from '../../lib/supabase'
 
 export default function TaskDetailModal({
@@ -40,6 +40,11 @@ export default function TaskDetailModal({
     const [isAddingRel, setIsAddingRel] = useState(false)
     const [targetTaskSearch, setTargetTaskSearch] = useState('')
     const [searchResults, setSearchResults] = useState([])
+
+    // Attachments
+    const [attachments, setAttachments] = useState([])
+    const [uploadError, setUploadError] = useState(null)
+    const [isUploading, setIsUploading] = useState(false)
 
     const [loading, setLoading] = useState(false)
 
@@ -102,10 +107,22 @@ export default function TaskDetailModal({
         setRelationships(relData || [])
     }
 
+    const fetchAttachmentsOnly = async () => {
+        const { data, error } = await supabase
+            .from('task_attachments')
+            .select('*')
+            .eq('task_id', task.id)
+            .order('created_at', { ascending: false })
+
+        if (!error) {
+            setAttachments(data || [])
+        }
+    }
+
     const fetchDetails = async () => {
         setLoading(true)
         try {
-            await Promise.all([fetchCommentsOnly(), fetchRelationshipsOnly()])
+            await Promise.all([fetchCommentsOnly(), fetchRelationshipsOnly(), fetchAttachmentsOnly()])
         } catch (err) {
             console.error("Error fetching details", err)
         } finally {
@@ -167,6 +184,109 @@ export default function TaskDetailModal({
         })
         if (!error) {
             setRelationships(relationships.filter(r => r.id !== relId))
+        }
+    }
+
+    const handleFileUpload = async (e) => {
+        const file = e.target.files?.[0]
+        if (!file) return
+
+        setUploadError(null)
+
+        // Validation 1: Max files
+        if (attachments.length >= 3) {
+            setUploadError("This card already has 3 attachments. Please remove one to add a new file.")
+            e.target.value = null // reset input
+            return
+        }
+
+        // Validation 2: Max size (10MB)
+        if (file.size > 10 * 1024 * 1024) {
+            setUploadError("File size exceeds 10MB limit.")
+            e.target.value = null
+            return
+        }
+
+        setIsUploading(true)
+        try {
+            const fileExt = file.name.split('.').pop()
+            const fileName = `${Math.random()}.${fileExt}`
+            const filePath = `${task.id}/${fileName}`
+
+            // Upload to Storage
+            const { error: uploadErr } = await supabase.storage
+                .from('attachments')
+                .upload(filePath, file)
+
+            if (uploadErr) throw uploadErr
+
+            // Insert to DB
+            const { data: insertData, error: dbError } = await supabase
+                .from('task_attachments')
+                .insert({
+                    task_id: task.id,
+                    file_name: file.name,
+                    file_path: filePath,
+                    file_type: file.type || 'application/octet-stream',
+                    file_size: file.size
+                })
+                .select()
+                .single()
+
+            if (dbError) throw dbError
+
+            setAttachments([insertData, ...attachments])
+            e.target.value = null // reset input
+        } catch (error) {
+            console.error('Upload failed:', error)
+            setUploadError(error.message || "Failed to upload file")
+        } finally {
+            setIsUploading(false)
+        }
+    }
+
+    const handleDeleteAttachment = async (attachment) => {
+        try {
+            // Delete from Storage
+            const { error: storageErr } = await supabase.storage
+                .from('attachments')
+                .remove([attachment.file_path])
+
+            if (storageErr) throw storageErr
+
+            // Delete from DB
+            const { error: dbErr } = await supabase
+                .from('task_attachments')
+                .delete()
+                .eq('id', attachment.id)
+
+            if (dbErr) throw dbErr
+
+            setAttachments(attachments.filter(a => a.id !== attachment.id))
+        } catch (error) {
+            console.error("Delete failed:", error)
+            alert("Failed to delete attachment")
+        }
+    }
+
+    const downloadAttachment = async (path, originalName) => {
+        try {
+            const { data, error } = await supabase.storage
+                .from('attachments')
+                .download(path)
+
+            if (error) throw error
+
+            const url = URL.createObjectURL(data)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = originalName
+            document.body.appendChild(a)
+            a.click()
+            URL.revokeObjectURL(url)
+            document.body.removeChild(a)
+        } catch (error) {
+            console.error("Download failed:", error)
         }
     }
 
@@ -255,6 +375,92 @@ export default function TaskDetailModal({
                                 ) : (
                                     <span className="text-gray-400 italic">Add a more detailed description...</span>
                                 )}
+                            </div>
+                        )}
+                    </div>
+
+                    {/* Attachments */}
+                    <div className="mb-8">
+                        <div className="flex items-center justify-between mb-4">
+                            <div className="flex items-center gap-2">
+                                <Paperclip size={18} className="text-gray-600" />
+                                <h3 className="font-semibold text-gray-700">Attachments</h3>
+                                <span className="text-xs text-gray-400 bg-gray-100 px-2 py-0.5 rounded-full">
+                                    {attachments.length}/3
+                                </span>
+                            </div>
+                        </div>
+
+                        {uploadError && (
+                            <div className="mb-3 p-3 bg-red-50 border border-red-100 text-red-600 text-sm rounded-lg flex items-center gap-2">
+                                <AlertCircle size={16} />
+                                {uploadError}
+                            </div>
+                        )}
+
+                        <div className="space-y-3 mb-4">
+                            {attachments.map(att => (
+                                <div key={att.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors group">
+                                    <div className="flex items-center gap-3 overflow-hidden">
+                                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
+                                            <FileText size={20} className="text-gray-500" />
+                                        </div>
+                                        <div className="min-w-0">
+                                            <div className="text-sm font-medium text-gray-700 truncate cursor-pointer hover:text-purple-600 hover:underline" onClick={() => downloadAttachment(att.file_path, att.file_name)}>
+                                                {att.file_name}
+                                            </div>
+                                            <div className="text-xs text-gray-400">
+                                                {(att.file_size / 1024 / 1024).toFixed(2)} MB • {new Date(att.created_at).toLocaleDateString()}
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                            onClick={() => downloadAttachment(att.file_path, att.file_name)}
+                                            className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg"
+                                            title="Download"
+                                        >
+                                            <Download size={16} />
+                                        </button>
+                                        <button
+                                            onClick={() => handleDeleteAttachment(att)}
+                                            className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"
+                                            title="Delete"
+                                        >
+                                            <Trash2 size={16} />
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {attachments.length < 3 ? (
+                            <div>
+                                <input
+                                    type="file"
+                                    id="file-upload"
+                                    className="hidden"
+                                    onChange={handleFileUpload}
+                                    disabled={isUploading}
+                                />
+                                <label
+                                    htmlFor="file-upload"
+                                    className={`w-full py-2 border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center gap-2 text-sm font-medium text-gray-500 transition-colors cursor-pointer ${isUploading ? 'opacity-50 cursor-not-allowed bg-gray-50' : 'hover:border-purple-300 hover:bg-purple-50 hover:text-purple-600'}`}
+                                >
+                                    {isUploading ? (
+                                        <span>Uploading...</span>
+                                    ) : (
+                                        <>
+                                            <Paperclip size={16} />
+                                            <span>Add an attachment</span>
+                                            <span className="text-xs font-normal text-gray-400 ml-1">(Max 10MB)</span>
+                                        </>
+                                    )}
+                                </label>
+                            </div>
+                        ) : (
+                            <div className="text-xs text-center text-gray-400 bg-gray-50 p-2 rounded border border-gray-100 italic">
+                                Attachment limit reached (3/3). Remove a file to upload a new one.
                             </div>
                         )}
                     </div>
