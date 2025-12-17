@@ -31,7 +31,7 @@ export function useBoardData(boardId) {
                 { event: '*', schema: 'public', table: 'columns', filter: `board_id=eq.${boardId}` },
                 (payload) => {
                     const { eventType, new: newRec, old: oldRec } = payload
-                    console.log(`[Realtime] Column ${eventType}`, payload)
+
 
                     if (eventType === 'INSERT') {
                         setColumns(prev => {
@@ -52,7 +52,6 @@ export function useBoardData(boardId) {
                 'postgres_changes',
                 { event: '*', schema: 'public', table: 'board_members', filter: `board_id=eq.${boardId}` },
                 () => {
-                    console.log('Realtime update: members changed')
                     fetchBoardData()
                 }
             )
@@ -61,12 +60,11 @@ export function useBoardData(boardId) {
                 { event: '*', schema: 'public', table: 'tasks' },
                 (payload) => {
                     const { eventType, new: newRec, old: oldRec } = payload
-                    console.log(`[Realtime] Task ${eventType} received`, payload)
+
 
                     if (eventType === 'INSERT') {
                         const isRelevant = columnsRef.current.some(c => c.id === newRec.column_id)
                         if (isRelevant) {
-                            console.log('New task in board columns, fetching data...')
                             fetchBoardData()
                         }
                     }
@@ -76,7 +74,6 @@ export function useBoardData(boardId) {
                             const taskExists = prev.some(c => c.tasks.some(t => t.id === taskId))
                             if (!taskExists) return prev
 
-                            console.log('Removing task locally:', taskId)
                             return prev.map(col => ({
                                 ...col,
                                 tasks: col.tasks.filter(t => t.id !== taskId)
@@ -102,13 +99,12 @@ export function useBoardData(boardId) {
                             if (!currentTask) {
                                 const isRelevant = prev.some(c => c.id === newRec.column_id)
                                 if (isRelevant) {
-                                    console.log('Updated task moved into board, fetching...')
                                     fetchBoardData()
                                 }
                                 return prev
                             }
 
-                            console.log('Updating task locally:', taskId)
+
                             const nextColId = newRec.column_id
                             const mergedTask = { ...currentTask, ...newRec }
 
@@ -140,7 +136,6 @@ export function useBoardData(boardId) {
                 }
             )
             .subscribe((status) => {
-                console.log(`[Realtime] Subscription status: ${status}`)
             })
 
         return () => {
@@ -151,7 +146,6 @@ export function useBoardData(boardId) {
     const [members, setMembers] = useState([])
 
     const fetchBoardData = async () => {
-        console.log(`[useBoardData] Fetching board data for: ${boardId} (Loading: ${loading})`)
         try {
             setLoading(true)
             const { data, error } = await supabase.functions.invoke('board-details', {
@@ -163,7 +157,6 @@ export function useBoardData(boardId) {
                 throw error
             }
 
-            console.log('[useBoardData] Fetch success. Setting data.')
             setBoard(data.board)
             setColumns(data.columns || [])
             setMembers(data.members || [])
@@ -171,7 +164,6 @@ export function useBoardData(boardId) {
             console.error('[useBoardData] Catch Error:', err)
             setError(err)
         } finally {
-            console.log('[useBoardData] Fetch complete. Setting loading=false')
             setLoading(false)
         }
     }

@@ -57,11 +57,11 @@ export function useChat(boardId, currentUser, isWidgetOpen = false) {
 
                     // Global Deduplication check
                     if (globalProcessedIds.has(newMessage.id)) {
-                        console.log('Skipping duplicate message:', newMessage.id)
+
                         return
                     }
                     globalProcessedIds.add(newMessage.id)
-                    console.log('Processing new message globally:', newMessage.id)
+
 
                     // Cleanup old IDs periodically
                     if (globalProcessedIds.size > 500) {
@@ -84,7 +84,7 @@ export function useChat(boardId, currentUser, isWidgetOpen = false) {
                         const distinctConv = currentActive?.id !== newMessage.conversation_id
 
                         if (isClosed || distinctConv) {
-                            console.log('Incrementing unread count')
+
                             setUnreadCount(prev => prev + 1)
                         }
                     }
@@ -92,10 +92,10 @@ export function useChat(boardId, currentUser, isWidgetOpen = false) {
             )
             .subscribe()
 
-        console.log('UseChat: Subscribed to global notifications')
+
 
         return () => {
-            console.log('UseChat: Cleaning up global subscription')
+
             supabase.removeChannel(channel)
         }
     }, [])
@@ -197,7 +197,7 @@ export function useChat(boardId, currentUser, isWidgetOpen = false) {
         if (error) {
             console.error('Error fetching messages:', error)
         } else {
-            console.log(`Fetched ${data.length} messages for conv ${conversationId}`)
+
             setMessages(data)
         }
         setLoading(false)
@@ -205,7 +205,7 @@ export function useChat(boardId, currentUser, isWidgetOpen = false) {
 
     const sendMessage = async (conversationId, content) => {
         if (!currentUser) return
-        console.log('Sending message to', conversationId)
+
         const { data, error } = await supabase
             .from('messages')
             .insert({
@@ -218,7 +218,7 @@ export function useChat(boardId, currentUser, isWidgetOpen = false) {
         if (error) {
             console.error('Error sending message:', error)
         } else {
-            console.log('Message sent successfully:', data)
+
         }
     }
 
