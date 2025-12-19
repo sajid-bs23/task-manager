@@ -110,7 +110,7 @@ export default function TaskDetailModal({
                 supabase.removeChannel(channel)
             }
         }
-    }, [isOpen, task])
+    }, [isOpen, task?.id])
 
     const fetchCommentsOnly = async () => {
         const { data: commentsData } = await supabase.functions.invoke('card-interactions', {
@@ -143,8 +143,24 @@ export default function TaskDetailModal({
             .eq('task_id', task.id)
             .order('created_at', { ascending: false })
 
-        if (!error) {
-            setAttachments(data || [])
+        if (!error && data) {
+            // Generate signed URLs for images
+            const attachmentsWithUrls = await Promise.all(data.map(async (att) => {
+                if (att.file_type.startsWith('image/')) {
+                    try {
+                        const { data: signedData, error: signedError } = await supabase.storage
+                            .from('attachments')
+                            .createSignedUrl(att.file_path, 3600) // 1 hour expiry
+                        if (!signedError) {
+                            return { ...att, preview_url: signedData.signedUrl }
+                        }
+                    } catch (e) {
+                        console.error("Error creating signed URL", e)
+                    }
+                }
+                return att
+            }))
+            setAttachments(attachmentsWithUrls)
         }
     }
 
@@ -264,7 +280,17 @@ export default function TaskDetailModal({
 
             if (dbError) throw dbError
 
-            setAttachments([insertData, ...attachments])
+            let attachmentWithPreview = insertData
+            if (insertData.file_type.startsWith('image/')) {
+                const { data: signedData } = await supabase.storage
+                    .from('attachments')
+                    .createSignedUrl(filePath, 3600)
+                if (signedData) {
+                    attachmentWithPreview = { ...insertData, preview_url: signedData.signedUrl }
+                }
+            }
+
+            setAttachments(prev => [attachmentWithPreview, ...prev])
             e.target.value = null // reset input
         } catch (error) {
             console.error('Upload failed:', error)
@@ -446,8 +472,12 @@ export default function TaskDetailModal({
                             {attachments.map(att => (
                                 <div key={att.id} className="flex items-center justify-between p-3 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors group">
                                     <div className="flex items-center gap-3 overflow-hidden">
-                                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0">
-                                            <FileText size={20} className="text-gray-500" />
+                                        <div className="w-10 h-10 bg-gray-100 rounded-lg flex items-center justify-center flex-shrink-0 overflow-hidden border border-gray-100">
+                                            {att.preview_url ? (
+                                                <img src={att.preview_url} alt={att.file_name} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <FileText size={20} className="text-gray-500" />
+                                            )}
                                         </div>
                                         <div className="min-w-0">
                                             <div className="text-sm font-medium text-gray-700 truncate cursor-pointer hover:text-purple-600 hover:underline" onClick={() => downloadAttachment(att.file_path, att.file_name)}>

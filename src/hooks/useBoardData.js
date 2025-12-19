@@ -65,7 +65,21 @@ export function useBoardData(boardId) {
                     if (eventType === 'INSERT') {
                         const isRelevant = columnsRef.current.some(c => c.id === newRec.column_id)
                         if (isRelevant) {
-                            fetchBoardData()
+                            // Instead of full fetchBoardData() which sets loading, 
+                            // we can either add a silent fetch or update locally.
+                            // Let's update locally.
+                            setColumns(prev => {
+                                return prev.map(col => {
+                                    if (col.id === newRec.column_id) {
+                                        const exists = col.tasks.some(t => t.id === newRec.id)
+                                        if (exists) return col
+                                        const newTasks = [...col.tasks, { ...newRec, task_attachments: [] }]
+                                        newTasks.sort((a, b) => a.position - b.position)
+                                        return { ...col, tasks: newTasks }
+                                    }
+                                    return col
+                                })
+                            })
                         }
                     }
                     else if (eventType === 'DELETE') {
@@ -133,6 +147,34 @@ export function useBoardData(boardId) {
                             }
                         })
                     }
+                }
+            )
+            .on(
+                'postgres_changes',
+                { event: '*', schema: 'public', table: 'task_attachments' },
+                (payload) => {
+                    const { eventType, new: newRec, old: oldRec } = payload
+                    const relatedTaskId = newRec?.task_id || oldRec?.task_id
+
+                    setColumns(prev => {
+                        return prev.map(col => ({
+                            ...col,
+                            tasks: col.tasks.map(t => {
+                                if (t.id === relatedTaskId) {
+                                    if (eventType === 'INSERT') {
+                                        const exists = t.task_attachments?.some(a => a.id === newRec.id)
+                                        if (exists) return t
+                                        return { ...t, task_attachments: [newRec, ...(t.task_attachments || [])] }
+                                    } else if (eventType === 'DELETE') {
+                                        return { ...t, task_attachments: (t.task_attachments || []).filter(a => a.id !== oldRec.id) }
+                                    } else if (eventType === 'UPDATE') {
+                                        return { ...t, task_attachments: (t.task_attachments || []).map(a => a.id === newRec.id ? newRec : a) }
+                                    }
+                                }
+                                return t
+                            })
+                        }))
+                    })
                 }
             )
             .subscribe((status) => {

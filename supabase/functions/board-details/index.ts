@@ -46,7 +46,8 @@ Deno.serve(async (req) => {
             *,
             tasks (
                 *,
-                profiles:assignee_id(full_name, avatar_url)
+                profiles:assignee_id(full_name, avatar_url),
+                task_attachments(*)
             )
         `)
             .eq('board_id', boardId)

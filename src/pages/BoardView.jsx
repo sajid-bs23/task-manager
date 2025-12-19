@@ -5,6 +5,7 @@ import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragOv
 import { arrayMove, SortableContext, horizontalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { Plus, MoreHorizontal, MessageSquare, Link as LinkIcon, Calendar, UserPlus, X } from 'lucide-react'
+import { supabase } from '../lib/supabase'
 import { useBoardData } from '../hooks/useBoardData'
 import TaskDetailModal from '../components/board/TaskDetailModal'
 import InviteMemberModal from '../components/board/InviteMemberModal'
@@ -13,6 +14,35 @@ import ChatWidget from '../components/chat/ChatWidget'
 // --- Components ---
 
 import { verticalListSortingStrategy } from '@dnd-kit/sortable'
+
+function TaskImagePreview({ attachments }) {
+  const [url, setUrl] = useState(null)
+  const imageAttachment = attachments?.find(a => a.file_type?.startsWith('image/'))
+
+  useEffect(() => {
+    if (imageAttachment) {
+      const getSignedUrl = async () => {
+        try {
+          const { data, error } = await supabase.storage
+            .from('attachments')
+            .createSignedUrl(imageAttachment.file_path, 3600)
+          if (!error) setUrl(data.signedUrl)
+        } catch (e) {
+          console.error("Error fetching preview URL", e)
+        }
+      }
+      getSignedUrl()
+    }
+  }, [imageAttachment])
+
+  if (!url) return null
+
+  return (
+    <div className="w-full h-32 overflow-hidden rounded-t-lg mb-2">
+      <img src={url} alt="Task preview" className="w-full h-full object-cover" />
+    </div>
+  )
+}
 
 function SortableTask({ task, onClick }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -35,6 +65,8 @@ function SortableTask({ task, onClick }) {
     )
   }
 
+  const hasImage = task.task_attachments?.some(a => a.file_type?.startsWith('image/'))
+
   return (
     <div
       ref={setNodeRef}
@@ -42,9 +74,12 @@ function SortableTask({ task, onClick }) {
       {...attributes}
       {...listeners}
       onClick={onClick}
-      className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 mb-2 cursor-pointer active:cursor-grabbing hover:border-purple-300 group hover:shadow-md transition-all"
+      className={`bg-white rounded-lg shadow-sm border border-gray-200 mb-2 cursor-pointer active:cursor-grabbing hover:border-purple-300 group hover:shadow-md transition-all ${hasImage ? 'p-0 overflow-hidden' : 'p-3'}`}
     >
-      <div className="text-sm text-gray-800 font-medium">{task.title}</div>
+      <TaskImagePreview attachments={task.task_attachments} />
+      <div className={hasImage ? 'p-3 pt-1' : ''}>
+        <div className="text-sm text-gray-800 font-medium">{task.title}</div>
+      </div>
       {/* Small indicators could go here (e.g. comment count) */}
     </div>
   )
