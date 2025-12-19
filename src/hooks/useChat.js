@@ -20,8 +20,13 @@ export function useChat(boardId, currentUser, isWidgetOpen = false) {
     const isOpenRef = useRef(isWidgetOpen)
     const activeConversationRef = useRef(activeConversation)
     const conversationsRef = useRef(conversations)
+    const currentUserRef = useRef(currentUser)
 
     // Sync refs
+    useEffect(() => {
+        currentUserRef.current = currentUser
+    }, [currentUser])
+
     useEffect(() => {
         isOpenRef.current = isWidgetOpen
         if (isWidgetOpen && activeConversation) {
@@ -69,7 +74,8 @@ export function useChat(boardId, currentUser, isWidgetOpen = false) {
                     }
 
                     // Ignore my own messages
-                    if (currentUser && newMessage.sender_id === currentUser.id) return
+                    const me = currentUserRef.current
+                    if (me && newMessage.sender_id === me.id) return
 
                     // Check if message belongs to one of my conversations (using Ref)
                     const myConvs = conversationsRef.current

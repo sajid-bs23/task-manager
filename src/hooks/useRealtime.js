@@ -8,7 +8,7 @@ export function useRealtime(table, filter = {}) {
     // Initial fetch
     const fetchData = async () => {
       let query = supabase.from(table).select('*')
-      
+
       Object.entries(filter).forEach(([key, value]) => {
         query = query.eq(key, value)
       })
@@ -36,7 +36,7 @@ export function useRealtime(table, filter = {}) {
           if (payload.eventType === 'INSERT') {
             setData(prev => [...prev, payload.new])
           } else if (payload.eventType === 'UPDATE') {
-            setData(prev => prev.map(item => 
+            setData(prev => prev.map(item =>
               item.id === payload.new.id ? payload.new : item
             ))
           } else if (payload.eventType === 'DELETE') {
@@ -44,7 +44,9 @@ export function useRealtime(table, filter = {}) {
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log(`Realtime (${table}) Status: ${status}`)
+      })
 
     return () => {
       supabase.removeChannel(channel)
@@ -95,7 +97,9 @@ export function useNotifications(userId) {
           }
         }
       )
-      .subscribe()
+      .subscribe((status) => {
+        console.log(`Notifications Status: ${status}`)
+      })
 
     return () => {
       supabase.removeChannel(channel)
